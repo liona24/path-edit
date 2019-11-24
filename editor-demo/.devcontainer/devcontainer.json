@@ -1,0 +1,24 @@
+{
+    "name": "nehean-development",
+    "dockerFile": "Dockerfile",
+    "runArgs": [
+        "-u", "vscode",
+
+        "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined"
+    ],
+    "settings": {
+        "lldb.executable": "/usr/bin/lldb",
+        "terminal.integrated.shell.linux": "/bin/bash"
+    },
+    "appPort": ["8080:8080"],
+    "postCreateCommand": "yarn install",
+    "extensions": [
+        "hdevalke.rust-test-lens",
+        "rust-lang.rust",
+        "dbaeumer.vscode-eslint",
+        "vadimcn.vscode-lldb",
+        "ecmel.vscode-html-css",
+        "bungcip.better-toml",
+        "octref.vetur"
+    ]
+}
