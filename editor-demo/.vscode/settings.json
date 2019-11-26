@@ -1,5 +1,0 @@
-{
-    "eslint.autoFixOnSave": true,
-    "eslint.packageManager": "yarn",
-    "rust.clippy_preference": "on"
-}
