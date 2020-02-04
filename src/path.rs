@@ -364,7 +364,7 @@ impl Path {
     /// The sice of each slice depends on the number of components used for initialization.
     ///
     /// Panics if the given index is invalid.
-    pub fn query_edge(&self, index: &IndexViewLine) -> (Vec<f32>, Vec<f32>) {
+    pub fn query_line(&self, index: &IndexViewLine) -> (Vec<f32>, Vec<f32>) {
         let index_of_referencing_line = index.try_get().expect("Index should be valid!");
 
         let line_index = &self.lines.borrow()[index_of_referencing_line];
@@ -402,7 +402,7 @@ impl Path {
     /// Attempt to find an edge between the points given.
     ///
     /// Panics if either index is invalid.
-    pub fn find_edge(
+    pub fn find_line(
         &self,
         point1: &IndexViewPoint,
         point2: &IndexViewPoint,
