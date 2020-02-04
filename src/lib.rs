@@ -3,8 +3,10 @@
 
 mod n_vec;
 mod path;
+mod index;
 
 pub use n_vec::{NVec, PushVector};
+pub use index::{Index, IndexViewLine, IndexViewPoint};
 pub use path::Path;
 
 #[cfg(test)]

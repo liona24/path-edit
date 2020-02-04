@@ -3,69 +3,10 @@ use std::rc::Rc;
 
 use arrayvec::ArrayVec;
 
+use crate::index::{Index, IndexViewLine, IndexViewPoint};
 use crate::n_vec::{NVec, PushVector};
 
-/// An index into a vertex array
-///
-/// To match WebGl capabilities it supports indices in the range of `u16`
-///
-/// If the index is negative it has to be considered invalid and the reference can be dropped.\
-/// Conventionally to mark an index as invalid set it to -1.
-type Index = Rc<Cell<i32>>;
-
 type RefNVec<T> = Rc<RefCell<NVec<T>>>;
-
-/// Index of a point.
-///
-/// It can be used to select the indexed object. It is agnostic of underlying mutations of the corresponding `Path`
-#[derive(Debug, Clone, PartialEq)]
-pub struct IndexViewPoint {
-    value: Index,
-}
-
-/// Index of a line.
-///
-/// It can be used to select the indexed object. It is agnostic of underlying mutations of the corresponding `Path`
-#[derive(Debug, Clone, PartialEq)]
-pub struct IndexViewLine {
-    value: Index,
-}
-
-impl IndexViewPoint {
-    /// Borrow the actual value\
-    /// This returns `None` if the index is invalid.
-    fn try_get(&self) -> Option<usize> {
-        let value = self.value.get();
-        if value >= 0 {
-            Some(value as usize)
-        } else {
-            None
-        }
-    }
-
-    /// Check if the underlying index is still valid.
-    pub fn is_valid(&self) -> bool {
-        self.value.get() >= 0
-    }
-}
-
-impl IndexViewLine {
-    /// Borrow the actual value\
-    /// This returns `None` if the index is invalid.
-    fn try_get(&self) -> Option<usize> {
-        let value = self.value.get();
-        if value >= 0 {
-            Some(value as usize)
-        } else {
-            None
-        }
-    }
-
-    /// Check if the underlying index is still valid.
-    pub fn is_valid(&self) -> bool {
-        self.value.get() >= 0
-    }
-}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Selection {
@@ -241,7 +182,7 @@ impl Path {
                 let rc_l_new = Rc::new(Cell::new(l_new as i32));
                 self.referencing_lines[v_new].push(Rc::clone(&rc_l_new));
 
-                line_index = Some(IndexViewLine { value: rc_l_new });
+                line_index = Some(IndexViewLine::new(rc_l_new));
 
                 // track the new line index for the other vertex
                 self.referencing_lines[v_other as usize].push(Rc::new(Cell::new(l_new as i32)));
@@ -280,12 +221,12 @@ impl Path {
                     Rc::new(Cell::new(index_of_referencing_line as i32)),
                     Rc::clone(&new_line),
                 ]);
-                line_index = Some(IndexViewLine { value: new_line });
+                line_index = Some(IndexViewLine::new(new_line));
                 self.referencing_lines[v_new] = a;
             }
         }
 
-        (IndexViewPoint { value: point_index }, line_index)
+        (IndexViewPoint::new(point_index), line_index)
     }
 
     /// Remove the currently selected object.
@@ -331,7 +272,7 @@ impl Path {
 
                 vertices.swap_remove(v);
                 self.referencing_points.swap_remove(v);
-                i.value.set(-1);
+                i.set(-1);
                 self.referencing_lines.swap_remove(v);
             }
             Selection::Line { i } => {
@@ -341,7 +282,7 @@ impl Path {
                 self.remove_line(index_of_referencing_line);
                 self.referencing_lines
                     .swap_remove(index_of_referencing_line);
-                i.value.set(-1);
+                i.set(-1);
             }
         }
     }
