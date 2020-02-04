@@ -201,4 +201,22 @@ mod tests {
         assert_eq!(removed, &[4, 5, 6]);
         assert_eq!(x.raw(), &[1, 2, 3]);
     }
+
+    #[test]
+    fn test_index() {
+        let mut x: NVec<usize> = NVec::new(5);
+        x.push(&[1, 2, 3, 4, 5]);
+        x.push(&[6, 7, 8, 9, 10]);
+
+        assert_eq!(&x[1], &[6, 7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn test_index_mut() {
+        let mut x: NVec<usize> = NVec::new(5);
+        x.push(&[1, 2, 3, 4, 5]);
+        x.push(&[6, 7, 8, 9, 10]);
+
+        assert_eq!(&mut x[1], &[6, 7, 8, 9, 10]);
+    }
 }
