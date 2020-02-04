@@ -1,3 +1,4 @@
+//! Module containing several operations for collections and a flat-stored multi-dimensional Vector storage
 use std::ops::{Index, IndexMut};
 use std::slice::{Chunks, ChunksMut};
 
@@ -13,10 +14,13 @@ pub trait PushVector<T> {
     fn push<I: IntoIterator<Item = T>>(&mut self, vector: I) -> usize;
 }
 
+/// Provides pop operations for a container type
 pub trait PopVector<T> {
+    /// Remove the last element, if any, and return it
     fn pop(&mut self) -> Option<Vec<T>>;
 }
 
+/// Trait to be implemented by collections which allow counting of stored objects
 pub trait Count {
     /// Get the total number of elements
     fn num_elements(&self) -> usize;
