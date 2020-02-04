@@ -1,12 +1,11 @@
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use arrayvec::ArrayVec;
 
+use crate::geom_storage::{GeomStorage, GeomStorageMut};
 use crate::index::{Index, IndexViewLine, IndexViewPoint};
 use crate::n_vec::{NVec, PushVector};
-
-type RefNVec<T> = Rc<RefCell<NVec<T>>>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Selection {
@@ -44,10 +43,8 @@ pub enum Selection {
 /// ```
 ///
 /// The only references given out are the backward references.
-pub struct Path {
-    vertices: RefNVec<f32>,
-    points: RefNVec<u16>,
-    lines: RefNVec<u16>,
+pub struct Path<S> {
+    storage: S,
 
     /// Backward reference to (possibly) retrieve the point's index (value) which is referencing the vertex at given its index (key)
     referencing_points: Vec<Option<Index>>,
@@ -56,39 +53,37 @@ pub struct Path {
     referencing_lines: Vec<ArrayVec<[Index; 2]>>,
 }
 
-impl Path {
+impl<S: GeomStorage<f32, u16> + GeomStorageMut<f32, u16>> Path<S> {
     /// Construct a new empty path backed by the given storage
-    pub fn new(vertices: RefNVec<f32>, points: RefNVec<u16>, lines: RefNVec<u16>) -> Self {
+    ///
+    /// Note: The content of the storage is ignored. If the path should recognize points and lines already
+    /// contained in the storage use `Path::from_vertices`
+    pub fn new(storage: S) -> Self {
         let referencing_points = Vec::new();
         let referencing_lines = Vec::new();
 
-        assert_eq!(points.borrow().num_components(), 1);
-        assert_eq!(lines.borrow().num_components(), 2);
+        assert_eq!(storage.get_points().num_components(), 1);
+        assert_eq!(storage.get_lines().num_components(), 2);
 
         Self {
-            vertices,
-            points,
-            lines,
+            storage,
             referencing_points,
             referencing_lines,
         }
     }
 
-    /// Construct a new editable path with the given vertices.
+    /// Construct a new editable path backed by the given storage parsing all
+    /// points and lines contained in the storage.
     ///
     /// `points` should be an array of 1-d indices into `vertices`, representing the visible points of the path.\
     /// `lines` should be an array of 2-d indices into `vertices`, representing the visible lines of the path.
-    pub fn from_vertices(
-        vertices_ref: RefNVec<f32>,
-        points_ref: RefNVec<u16>,
-        lines_ref: RefNVec<u16>,
-    ) -> Self {
+    pub fn from_vertices(storage: S) -> Self {
         let mut referencing_lines: Vec<ArrayVec<[Index; 2]>>;
         let mut referencing_points: Vec<Option<Index>>;
         {
-            let points = points_ref.borrow();
-            let lines = lines_ref.borrow();
-            let vertices = vertices_ref.borrow();
+            let points = storage.get_points();
+            let lines = storage.get_lines();
+            let vertices = storage.get_vertices();
 
             assert_eq!(points.num_components(), 1);
             assert_eq!(lines.num_components(), 2);
@@ -115,9 +110,7 @@ impl Path {
         }
 
         Self {
-            vertices: vertices_ref,
-            points: points_ref,
-            lines: lines_ref,
+            storage,
             referencing_points,
             referencing_lines,
         }
@@ -152,9 +145,9 @@ impl Path {
         selected: &Selection,
     ) -> (IndexViewPoint, Option<IndexViewLine>) {
         // index of the new vertex
-        let v_new = self.vertices.borrow_mut().push(position) - 1;
+        let v_new = self.storage.get_vertices_mut().push(position) - 1;
         // index of the new point
-        let p_new = self.points.borrow_mut().push(&[v_new as u16]) - 1;
+        let p_new = self.storage.get_points_mut().push(&[v_new as u16]) - 1;
 
         // the index of the new point is tracked in `referencing_points`
         let point_index = Rc::new(Cell::new(p_new as i32));
@@ -172,11 +165,11 @@ impl Path {
                 let index_of_referencing_point = i
                     .try_get()
                     .expect("Selected point's index should be valid!");
-                let v_other = &self.points.borrow()[index_of_referencing_point];
+                let v_other = &self.storage.get_points()[index_of_referencing_point];
                 let v_other = v_other[0];
 
                 // Add the new line
-                let l_new = self.lines.borrow_mut().push(&[v_new as u16, v_other]) - 1;
+                let l_new = self.storage.get_lines_mut().push(&[v_new as u16, v_other]) - 1;
 
                 // track the new line index
                 let rc_l_new = Rc::new(Cell::new(l_new as i32));
@@ -192,7 +185,7 @@ impl Path {
                 // Retrieve the selected line
                 let index_of_referencing_line =
                     i.try_get().expect("Selected line's index should be valid!");
-                let mut lines = self.lines.borrow_mut();
+                let lines = self.storage.get_lines_mut();
 
                 let p_old;
                 {
@@ -247,8 +240,8 @@ impl Path {
                 let v;
                 {
                     let vertex_indices = &self
-                        .points
-                        .borrow_mut()
+                        .storage
+                        .get_points_mut()
                         .swap_remove(index_of_referencing_point);
                     v = vertex_indices[0] as usize;
                 }
@@ -263,7 +256,7 @@ impl Path {
                 }
 
                 // Remove the vertex and update the references
-                let mut vertices = self.vertices.borrow_mut();
+                let vertices = self.storage.get_vertices_mut();
                 let v_update_index = vertices.len() - 1;
 
                 if let Some(updated_ref) = &mut self.referencing_points[v_update_index] {
@@ -295,8 +288,8 @@ impl Path {
     pub fn query_point(&self, index: &IndexViewPoint) -> Vec<f32> {
         let index_of_referencing_point = index.try_get().expect("Index should be valid!");
 
-        let point_index = self.points.borrow()[index_of_referencing_point][0];
-        self.vertices.borrow()[point_index as usize].to_owned()
+        let point_index = self.storage.get_points()[index_of_referencing_point][0];
+        self.storage.get_vertices()[point_index as usize].to_owned()
     }
 
     /// Query this path for the edge corresponding to the given index.
@@ -308,8 +301,8 @@ impl Path {
     pub fn query_line(&self, index: &IndexViewLine) -> (Vec<f32>, Vec<f32>) {
         let index_of_referencing_line = index.try_get().expect("Index should be valid!");
 
-        let line_index = &self.lines.borrow()[index_of_referencing_line];
-        let vertices = &self.vertices.borrow();
+        let line_index = &self.storage.get_lines()[index_of_referencing_line];
+        let vertices = &self.storage.get_vertices();
 
         (
             vertices[line_index[0] as usize].to_owned(),
@@ -328,12 +321,12 @@ impl Path {
         match selection {
             Selection::Point { i } => {
                 let i = i.try_get().expect("Index should be valid!");
-                let points = self.points.borrow();
+                let points = self.storage.get_points();
                 Some(NVec::from_slice(points.num_components(), &points[i]))
             }
             Selection::Line { i } => {
                 let i = i.try_get().expect("Index should be valid!");
-                let lines = self.lines.borrow();
+                let lines = self.storage.get_lines();
                 Some(NVec::from_slice(lines.num_components(), &lines[i]))
             }
             Selection::Empty => None,
@@ -357,7 +350,7 @@ impl Path {
     ///
     /// This is an O(1) operation.
     fn remove_line(&mut self, line_index: usize) {
-        let mut lines = self.lines.borrow_mut();
+        let lines = self.storage.get_lines_mut();
         let update_index = (lines.len() - 1) as i32;
         // note that the following moves the last element of `lines` to the index where we remove
         let vertex_indices = lines.swap_remove(line_index);
@@ -382,9 +375,22 @@ impl Path {
     }
 }
 
+impl<S: GeomStorage<f32, u16>> GeomStorage<f32, u16> for Path<S> {
+    fn get_vertices(&self) -> &NVec<f32> {
+        self.storage.get_vertices()
+    }
+    fn get_points(&self) -> &NVec<u16> {
+        self.storage.get_points()
+    }
+    fn get_lines(&self) -> &NVec<u16> {
+        self.storage.get_lines()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geom_storage::SimpleStorage;
     use std::collections::HashSet;
     use std::hash::Hash;
     use std::iter::FromIterator;
@@ -396,7 +402,11 @@ mod tests {
         h1 == h2
     }
 
-    fn bootstrap_edge() -> (Path, [IndexViewPoint; 2], IndexViewLine) {
+    fn bootstrap_edge() -> (
+        Path<SimpleStorage<f32, u16>>,
+        [IndexViewPoint; 2],
+        IndexViewLine,
+    ) {
         let mut vertices = NVec::new(1);
         vertices.push(&[1.0]);
         vertices.push(&[3.0]);
@@ -408,11 +418,8 @@ mod tests {
         let mut lines = NVec::new(2);
         lines.push(&[0u16, 1u16]);
 
-        let vertices = Rc::new(RefCell::new(vertices));
-        let points = Rc::new(RefCell::new(points));
-        let lines = Rc::new(RefCell::new(lines));
-
-        let p = Path::from_vertices(vertices, points, lines);
+        let storage = SimpleStorage::from_vertices(vertices, points, lines);
+        let p = Path::from_vertices(storage);
         let p_indices = [
             IndexViewPoint {
                 value: Rc::clone(&p.referencing_points[0].as_ref().unwrap()),
@@ -459,8 +466,8 @@ mod tests {
         // Without an active selection, no edge should have been added
         assert!(e_new.is_none());
 
-        let vertices = path.vertices.borrow();
-        let points = path.points.borrow();
+        let vertices = path.get_vertices();
+        let points = path.get_points();
 
         // Check that all vital components were added:
         assert_eq!(vertices.len(), 3);
@@ -490,9 +497,9 @@ mod tests {
 
         let e_new = e_new.expect("An edge should have beend added");
 
-        let vertices = path.vertices.borrow();
-        let points = path.points.borrow();
-        let lines = path.lines.borrow();
+        let vertices = path.get_vertices();
+        let points = path.get_points();
+        let lines = path.get_lines();
 
         // Check that all vital components were added:
         assert_eq!(vertices.len(), 3);
@@ -535,9 +542,9 @@ mod tests {
 
         let e_new = e_new.expect("An edge should have beend added");
 
-        let vertices = path.vertices.borrow();
-        let points = path.points.borrow();
-        let lines = path.lines.borrow();
+        let vertices = path.get_vertices();
+        let points = path.get_points();
+        let lines = path.get_lines();
 
         // Check that all vital components were added:
         assert_eq!(vertices.len(), 3);
@@ -600,7 +607,7 @@ mod tests {
         let (new_point, _) = path.add_point(&[4.0], &selected);
         path.remove(selected);
 
-        assert_eq!(path.lines.borrow().len(), 0);
+        assert_eq!(path.get_lines().len(), 0);
         assert_eq!(path.referencing_lines[0].len(), 0);
         assert_eq!(path.referencing_lines[1].len(), 0);
 
@@ -614,7 +621,7 @@ mod tests {
         let (new_point, _) = path.add_point(&[4.0], &Selection::Empty);
         path.remove(Selection::Point { i: p1 });
 
-        assert_eq!(path.lines.borrow().len(), 0);
+        assert_eq!(path.get_lines().len(), 0);
         assert_eq!(path.referencing_lines[0].len(), 0);
 
         assert_eq!(new_point.try_get().unwrap(), 1);
@@ -628,9 +635,9 @@ mod tests {
         let (_, _) = path.add_point(&[6.0], &Selection::Point { i: p1 });
         path.remove(Selection::Point { i: new_point });
 
-        assert_eq!(path.vertices.borrow().len(), 3);
-        assert_eq!(path.points.borrow().len(), 3);
-        assert_eq!(path.lines.borrow().len(), 2);
+        assert_eq!(path.get_vertices().len(), 3);
+        assert_eq!(path.get_points().len(), 3);
+        assert_eq!(path.get_lines().len(), 2);
         assert_eq!(path.referencing_points.len(), 3);
         assert_eq!(path.referencing_lines.len(), 3);
     }
@@ -651,16 +658,9 @@ mod tests {
         assert_eq!(path.referencing_points[2].as_ref().unwrap().get(), 2);
     }
 
-    fn setup_empty_path_2d() -> Path {
-        let vertices = NVec::new(2);
-        let points = NVec::new(1);
-        let lines = NVec::new(2);
-
-        let vertices = Rc::new(RefCell::new(vertices));
-        let points = Rc::new(RefCell::new(points));
-        let lines = Rc::new(RefCell::new(lines));
-
-        Path::new(vertices, points, lines)
+    fn setup_empty_path_2d() -> Path<SimpleStorage<f32, u16>> {
+        let storage = SimpleStorage::new(2);
+        Path::new(storage)
     }
 
     #[test]
@@ -699,7 +699,7 @@ mod tests {
         // we queried for a point so each index should only represent single point
         assert_eq!(indices.num_components(), 1);
         let i = indices[0][0] as usize;
-        assert_eq!(&path.vertices.borrow()[i], &[5.0, 6.0]);
+        assert_eq!(&path.get_vertices()[i], &[5.0, 6.0]);
     }
 
     #[test]
@@ -717,7 +717,7 @@ mod tests {
         let i1 = indices[0][0] as usize;
         let i2 = indices[0][1] as usize;
 
-        let v = path.vertices.borrow();
+        let v = path.get_vertices();
 
         let first = v[i1] == [1.0, 2.0] && v[i2] == [3.0, 4.0];
         let second = v[i2] == [1.0, 2.0] && v[i1] == [3.0, 4.0];

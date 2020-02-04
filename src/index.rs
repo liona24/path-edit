@@ -1,3 +1,4 @@
+//! A collection of structures which can be used to index primitives (such as points and lines) in a `Path` object.
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -42,15 +43,13 @@ macro_rules! implement_view {
 
             /// Set the internal value
             #[inline]
-            pub(crate) fn set(&self, v : i32) {
+            pub(crate) fn set(&self, v: i32) {
                 self.value.set(v);
             }
 
             #[inline]
-            pub(crate) fn new(value : Index) -> Self {
-                Self {
-                    value
-                }
+            pub(crate) fn new(value: Index) -> Self {
+                Self { value }
             }
 
             /// Check if the underlying index is still valid.
