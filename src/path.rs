@@ -709,4 +709,85 @@ mod tests {
         // The reference of the point got updated correctly
         assert_eq!(path.referencing_points[2].as_ref().unwrap().get(), 2);
     }
+
+    fn setup_empty_path_2d() -> Path {
+        let vertices = NVec::new(2);
+        let points = NVec::new(1);
+        let lines = NVec::new(2);
+
+        let vertices = Rc::new(RefCell::new(vertices));
+        let points = Rc::new(RefCell::new(points));
+        let lines = Rc::new(RefCell::new(lines));
+
+        Path::new(vertices, points, lines)
+    }
+
+    #[test]
+    fn query_point_queries_correct_point() {
+        let mut path = setup_empty_path_2d();
+        let (p1, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
+        let (p2, _) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1 });
+
+        assert_eq!(path.query_point(&p2), vec![3.0, 4.0]);
+    }
+
+    #[test]
+    fn query_line_queries_correct_points() {
+        let mut path = setup_empty_path_2d();
+        let (p1, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
+        let (_p2, line) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1 });
+        let line = line.unwrap();
+
+        let first = path.query_line(&line) == (vec![1.0, 2.0], vec![3.0, 4.0]);
+        let second = path.query_line(&line) == (vec![3.0, 4.0], vec![1.0, 2.0]);
+
+        assert!(second || first);
+    }
+
+    #[test]
+    fn query_vertex_indices_queries_correct_points_and_lines_if_point_selected() {
+        let mut path = setup_empty_path_2d();
+
+        let (p1, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
+        let (_, line1) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1 });
+        let (p3, _) = path.add_point(&[5.0, 6.0], &Selection::Line { i: line1.unwrap() });
+
+        let indices = path
+            .query_vertex_indices(&Selection::Point { i: p3 })
+            .expect("Should have selected something");
+        // we queried for a point so each index should only represent single point
+        assert_eq!(indices.num_components(), 1);
+        let i = indices[0][0] as usize;
+        assert_eq!(&path.vertices.borrow()[i], &[5.0, 6.0]);
+    }
+
+    #[test]
+    fn query_vertex_indices_queries_correct_points_and_lines_if_line_selected() {
+        let mut path = setup_empty_path_2d();
+
+        let (p1, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
+        let (_, line1) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1 });
+
+        let indices = path
+            .query_vertex_indices(&Selection::Line { i: line1.unwrap() })
+            .expect("Should have selected something");
+        // we queried for a line so each index should represent two points
+        assert_eq!(indices.num_components(), 2);
+        let i1 = indices[0][0] as usize;
+        let i2 = indices[0][1] as usize;
+
+        let v = path.vertices.borrow();
+
+        let first = v[i1] == [1.0, 2.0] && v[i2] == [3.0, 4.0];
+        let second = v[i2] == [1.0, 2.0] && v[i1] == [3.0, 4.0];
+
+        assert!(first || second);
+    }
+
+    #[test]
+    fn query_vertex_indices_queries_nothing_if_empty_selection() {
+        let mut path = setup_empty_path_2d();
+        let (_, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
+        assert!(path.query_vertex_indices(&Selection::Empty).is_none());
+    }
 }
