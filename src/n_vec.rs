@@ -163,6 +163,7 @@ impl<'a, T: 'a + Copy> PushVector<&'a T> for NVec<T> {
 impl<T> Index<usize> for NVec<T> {
     type Output = [T];
 
+    #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         let i = index * self.num_components;
         &self.values[i..i + self.num_components]
@@ -170,6 +171,7 @@ impl<T> Index<usize> for NVec<T> {
 }
 
 impl<T> IndexMut<usize> for NVec<T> {
+    #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         let i = index * self.num_components;
         &mut self.values[i..i + self.num_components]

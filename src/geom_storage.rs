@@ -1,7 +1,7 @@
 //! Provides traits required to be implemented by vertex storages to be used as backend storage for
 //! a `Path` object.
 //!
-//! Also provides a simple storage container `SimpleStorage` to make your life easier.
+//! Also provides a simple storage container `DefaultStorage` to make your life easier.
 use crate::n_vec::NVec;
 
 /// Trait which should be implemented by geometry storages. Provides ways of accessing the stored data.
@@ -25,13 +25,13 @@ pub trait GeomStorageMut<V, I> {
 }
 
 /// A convenient structure holding geometry data, i.e. vertices and indices for points and lines
-pub struct SimpleStorage<V, I> {
+pub struct DefaultStorage<V, I> {
     vertices: NVec<V>,
     points: NVec<I>,
     lines: NVec<I>,
 }
 
-impl<V, I> SimpleStorage<V, I> {
+impl<V, I> DefaultStorage<V, I> {
     /// Construct an empty simple vertex storage for vertices with the given number of components
     pub fn new(num_components: usize) -> Self {
         Self {
@@ -56,25 +56,31 @@ impl<V, I> SimpleStorage<V, I> {
     }
 }
 
-impl<V, I> GeomStorage<V, I> for SimpleStorage<V, I> {
+impl<V, I> GeomStorage<V, I> for DefaultStorage<V, I> {
+    #[inline]
     fn get_vertices(&self) -> &NVec<V> {
         &self.vertices
     }
+    #[inline]
     fn get_points(&self) -> &NVec<I> {
         &self.points
     }
+    #[inline]
     fn get_lines(&self) -> &NVec<I> {
         &self.lines
     }
 }
 
-impl<V, I> GeomStorageMut<V, I> for SimpleStorage<V, I> {
+impl<V, I> GeomStorageMut<V, I> for DefaultStorage<V, I> {
+    #[inline]
     fn get_vertices_mut(&mut self) -> &mut NVec<V> {
         &mut self.vertices
     }
+    #[inline]
     fn get_points_mut(&mut self) -> &mut NVec<I> {
         &mut self.points
     }
+    #[inline]
     fn get_lines_mut(&mut self) -> &mut NVec<I> {
         &mut self.lines
     }

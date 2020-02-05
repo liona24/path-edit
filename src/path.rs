@@ -285,11 +285,19 @@ impl<S: GeomStorage<f32, u16> + GeomStorageMut<f32, u16>> Path<S> {
     /// Returns the location of the point. The sice of the slice depends on the number of components used for initialization.
     ///
     /// Panics if the given index is invalid.
-    pub fn query_point(&self, index: &IndexViewPoint) -> Vec<f32> {
-        let index_of_referencing_point = index.try_get().expect("Index should be valid!");
+    pub fn query_point(&self, index: &IndexViewPoint) -> &[f32] {
+        let i = self.vertex_index_from_index_view_point(index);
+        &self.storage.get_vertices()[i]
+    }
 
-        let point_index = self.storage.get_points()[index_of_referencing_point][0];
-        self.storage.get_vertices()[point_index as usize].to_owned()
+    /// Query this path for the point corresponding to the given index.
+    ///
+    /// Returns the mutable location of the point. The sice of the slice depends on the number of components used for initialization.
+    ///
+    /// Panics if the given index is invalid.
+    pub fn query_point_mut(&mut self, index: &IndexViewPoint) -> &mut [f32] {
+        let i = self.vertex_index_from_index_view_point(index);
+        &mut self.storage.get_vertices_mut()[i]
     }
 
     /// Query this path for the edge corresponding to the given index.
@@ -298,39 +306,51 @@ impl<S: GeomStorage<f32, u16> + GeomStorageMut<f32, u16>> Path<S> {
     /// The sice of each slice depends on the number of components used for initialization.
     ///
     /// Panics if the given index is invalid.
-    pub fn query_line(&self, index: &IndexViewLine) -> (Vec<f32>, Vec<f32>) {
-        let index_of_referencing_line = index.try_get().expect("Index should be valid!");
+    pub fn query_line(&self, index: &IndexViewLine) -> (&[f32], &[f32]) {
+        let (i, j) = self.vertex_index_from_index_view_line(index);
+        let vertices = self.storage.get_vertices();
+        (&vertices[i], &vertices[j])
+    }
 
-        let line_index = &self.storage.get_lines()[index_of_referencing_line];
-        let vertices = &self.storage.get_vertices();
-
-        (
-            vertices[line_index[0] as usize].to_owned(),
-            vertices[line_index[1] as usize].to_owned(),
-        )
+    /// Query this path for the given selection and apply the given function to each vertex associated.
+    ///
+    /// Panics if the given index is invalid.
+    pub fn apply<F: Fn(&mut [f32])>(&mut self, selection: &Selection, func: F) {
+        match selection {
+            Selection::Empty => {}
+            Selection::Point { i } => {
+                let j = self.vertex_index_from_index_view_point(i);
+                func(&mut self.storage.get_vertices_mut()[j]);
+            }
+            Selection::Line { i } => {
+                let (j, k) = self.vertex_index_from_index_view_line(i);
+                let vertices = self.storage.get_vertices_mut();
+                func(&mut vertices[j]);
+                func(&mut vertices[k]);
+            }
+        }
     }
 
     /// Finds the indices of all the vertices associated with the given selection.
     ///
-    /// The returned `VecStorage`s number of components depends on the selection. \
-    /// If the selection corresponds to points, the number of components should be equal to 1.\
-    /// Usually all other selections return an index over lines of vertices, i.e. 2 components.\
-    ///
-    /// Returns `None` if the selection was empty.
-    pub fn query_vertex_indices(&self, selection: &Selection) -> Option<NVec<u16>> {
+    /// If the selection is a point a single index is returned.\
+    /// If a line is selected two indices are returned.
+    pub fn query_vertex_indices(&self, selection: &Selection) -> ArrayVec<[u16; 2]> {
+        let mut rv = ArrayVec::new();
         match selection {
             Selection::Point { i } => {
-                let i = i.try_get().expect("Index should be valid!");
-                let points = self.storage.get_points();
-                Some(NVec::from_slice(points.num_components(), &points[i]))
+                let i = self.vertex_index_from_index_view_point(i);
+                rv.push(i as u16);
             }
             Selection::Line { i } => {
-                let i = i.try_get().expect("Index should be valid!");
-                let lines = self.storage.get_lines();
-                Some(NVec::from_slice(lines.num_components(), &lines[i]))
+                let (i, j) = self.vertex_index_from_index_view_line(i);
+                rv.push(i as u16);
+                rv.push(j as u16);
             }
-            Selection::Empty => None,
-        }
+            Selection::Empty => {}
+        };
+
+        rv
     }
 
     /// Attempt to find an edge between the points given.
@@ -373,6 +393,26 @@ impl<S: GeomStorage<f32, u16> + GeomStorageMut<f32, u16>> Path<S> {
             }
         }
     }
+
+    #[inline]
+    /// Unwraps the given IndexView and returns the index into `self.storage.vertices` which corresponds to it
+    fn vertex_index_from_index_view_point(&self, index: &IndexViewPoint) -> usize {
+        let index_of_referencing_point = index.try_get().expect("Index should be valid!");
+
+        self.storage.get_points()[index_of_referencing_point][0] as usize
+    }
+
+    #[inline]
+    /// Unwraps the given IndexView and returns the indices into `self.storage.vertices` which correspond to it
+    fn vertex_index_from_index_view_line(&self, index: &IndexViewLine) -> (usize, usize) {
+        let index_of_referencing_line = index.try_get().expect("Index should be valid!");
+
+        let line_index = &self.storage.get_lines()[index_of_referencing_line];
+        let j = line_index[0] as usize;
+        let k = line_index[1] as usize;
+
+        (k, j)
+    }
 }
 
 impl<S: GeomStorage<f32, u16>> GeomStorage<f32, u16> for Path<S> {
@@ -390,7 +430,7 @@ impl<S: GeomStorage<f32, u16>> GeomStorage<f32, u16> for Path<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom_storage::SimpleStorage;
+    use crate::geom_storage::DefaultStorage;
     use std::collections::HashSet;
     use std::hash::Hash;
     use std::iter::FromIterator;
@@ -403,7 +443,7 @@ mod tests {
     }
 
     fn bootstrap_edge() -> (
-        Path<SimpleStorage<f32, u16>>,
+        Path<DefaultStorage<f32, u16>>,
         [IndexViewPoint; 2],
         IndexViewLine,
     ) {
@@ -418,7 +458,7 @@ mod tests {
         let mut lines = NVec::new(2);
         lines.push(&[0u16, 1u16]);
 
-        let storage = SimpleStorage::from_vertices(vertices, points, lines);
+        let storage = DefaultStorage::from_vertices(vertices, points, lines);
         let p = Path::from_vertices(storage);
         let p_indices = [
             IndexViewPoint {
@@ -658,8 +698,8 @@ mod tests {
         assert_eq!(path.referencing_points[2].as_ref().unwrap().get(), 2);
     }
 
-    fn setup_empty_path_2d() -> Path<SimpleStorage<f32, u16>> {
-        let storage = SimpleStorage::new(2);
+    fn setup_empty_path_2d() -> Path<DefaultStorage<f32, u16>> {
+        let storage = DefaultStorage::new(2);
         Path::new(storage)
     }
 
@@ -669,7 +709,16 @@ mod tests {
         let (p1, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
         let (p2, _) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1 });
 
-        assert_eq!(path.query_point(&p2), vec![3.0, 4.0]);
+        assert_eq!(path.query_point(&p2), &[3.0, 4.0]);
+    }
+
+    #[test]
+    fn query_point_mut_queries_correct_point() {
+        let mut path = setup_empty_path_2d();
+        let (p1, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
+        let (p2, _) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1 });
+
+        assert_eq!(path.query_point_mut(&p2), &[3.0, 4.0]);
     }
 
     #[test]
@@ -679,8 +728,8 @@ mod tests {
         let (_p2, line) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1 });
         let line = line.unwrap();
 
-        let first = path.query_line(&line) == (vec![1.0, 2.0], vec![3.0, 4.0]);
-        let second = path.query_line(&line) == (vec![3.0, 4.0], vec![1.0, 2.0]);
+        let first = path.query_line(&line) == (&[1.0, 2.0], &[3.0, 4.0]);
+        let second = path.query_line(&line) == (&[3.0, 4.0], &[1.0, 2.0]);
 
         assert!(second || first);
     }
@@ -693,12 +742,10 @@ mod tests {
         let (_, line1) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1 });
         let (p3, _) = path.add_point(&[5.0, 6.0], &Selection::Line { i: line1.unwrap() });
 
-        let indices = path
-            .query_vertex_indices(&Selection::Point { i: p3 })
-            .expect("Should have selected something");
+        let indices = path.query_vertex_indices(&Selection::Point { i: p3 });
         // we queried for a point so each index should only represent single point
-        assert_eq!(indices.num_components(), 1);
-        let i = indices[0][0] as usize;
+        assert_eq!(indices.len(), 1);
+        let i = indices[0] as usize;
         assert_eq!(&path.get_vertices()[i], &[5.0, 6.0]);
     }
 
@@ -709,13 +756,11 @@ mod tests {
         let (p1, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
         let (_, line1) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1 });
 
-        let indices = path
-            .query_vertex_indices(&Selection::Line { i: line1.unwrap() })
-            .expect("Should have selected something");
+        let indices = path.query_vertex_indices(&Selection::Line { i: line1.unwrap() });
         // we queried for a line so each index should represent two points
-        assert_eq!(indices.num_components(), 2);
-        let i1 = indices[0][0] as usize;
-        let i2 = indices[0][1] as usize;
+        assert_eq!(indices.len(), 2);
+        let i1 = indices[0] as usize;
+        let i2 = indices[1] as usize;
 
         let v = path.get_vertices();
 
@@ -729,6 +774,33 @@ mod tests {
     fn query_vertex_indices_queries_nothing_if_empty_selection() {
         let mut path = setup_empty_path_2d();
         let (_, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
-        assert!(path.query_vertex_indices(&Selection::Empty).is_none());
+        assert_eq!(path.query_vertex_indices(&Selection::Empty).len(), 0);
+    }
+
+    #[test]
+    fn apply_applies_to_correct_points_and_lines_if_point_selected() {
+        let mut path = setup_empty_path_2d();
+
+        let (p1, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
+        let (p2, line1) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1.clone() });
+        let (p3, _) = path.add_point(&[5.0, 6.0], &Selection::Line { i: line1.unwrap() });
+
+        let selection = Selection::Point { i: p3.clone() };
+        path.apply(&selection, |v| v[0] = -1.0);
+        assert_eq!(path.query_point(&p3), &[-1.0, 6.0]);
+        assert_eq!(path.query_point(&p1), &[1.0, 2.0]);
+        assert_eq!(path.query_point(&p2), &[3.0, 4.0]);
+    }
+
+    #[test]
+    fn apply_applies_to_correct_points_and_lines_if_line_selected() {
+        let mut path = setup_empty_path_2d();
+
+        let (p1, _) = path.add_point(&[1.0, 2.0], &Selection::Empty);
+        let (p2, line1) = path.add_point(&[3.0, 4.0], &Selection::Point { i: p1.clone() });
+
+        path.apply(&Selection::Line { i: line1.unwrap() }, |v| v[0] *= -1.);
+        assert_eq!(path.query_point(&p1), &[-1.0, 2.0]);
+        assert_eq!(path.query_point(&p2), &[-3.0, 4.0]);
     }
 }
